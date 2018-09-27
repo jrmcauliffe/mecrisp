@@ -1,0 +1,185 @@
+
+\ Graphics driver for the
+\ Sharp memory LCD booster pack 
+
+\ -----------------------------------------------------------------------------
+\   Display wires on 20 Pin Launchpad header:
+\ -----------------------------------------------------------------------------
+
+\   1:              1: GND
+\   2: Vcc on GPIO  2:
+\   3:              3:
+\   4:              4:
+\   5: LCD enable   5:
+\   6: SPI-CS       6: SPI-SIMO
+\   7: SPI-CLK      7:
+\   8: Touch        8: Touch
+\   9: Touch        9: Touch
+\  10: Touch       10: Touch
+
+\ -----------------------------------------------------------------------------
+\   On MSP430F5529 Launchpad this connects to following ports:
+\ -----------------------------------------------------------------------------
+
+\ P6.5:  Vcc
+\ P1.6:  LCD enable
+\ P6.6:  SPI-CS
+\ P3.2:  SPI-CLK
+\ P3.0:  SPI-SIMO
+
+$200 constant P1IN
+$202 constant P1OUT
+$204 constant P1DIR
+
+$220 constant P3IN
+$222 constant P3OUT
+$224 constant P3DIR
+
+$241 constant P6IN
+$243 constant P6OUT
+$245 constant P6DIR
+
+: lcd-clk-high  ( -- ) 1 2 lshift P3OUT cbis!  inline ;
+: lcd-clk-low   ( -- ) 1 2 lshift P3OUT cbic!  inline ;
+
+: lcd-data-high ( -- ) 1          P3OUT cbis!  inline ;
+: lcd-data-low  ( -- ) 1          P3OUT cbic!  inline ;
+
+: lcd-select    ( -- ) 1 6 lshift P6OUT cbis!  inline ;
+: lcd-deselect  ( -- ) 1 6 lshift P6OUT cbic!  inline ;
+: lcd-select? ( -- ? ) 1 6 lshift P6OUT cbit@  inline ; 
+
+\ -----------------------------------------------------------------------------
+\   Low-Level driver implementation
+\ -----------------------------------------------------------------------------
+
+: lcd-bit ( ? -- ) if lcd-data-high else lcd-data-low then
+                  nop lcd-clk-high  nop  lcd-clk-low ;
+
+: >lcd ( c -- )
+  dup   1 and lcd-bit
+  dup   2 and lcd-bit
+  dup   4 and lcd-bit
+  dup   8 and lcd-bit
+  dup  16 and lcd-bit
+  dup  32 and lcd-bit
+  dup  64 and lcd-bit
+      128 and lcd-bit
+;
+
+false variable lcd-vcom
+
+: lcd-toggle-vcom ( -- )
+  lcd-select? \ Display communication currently active ?
+  if -1 lcd-vcom xor! \ If yes, only toggle vcom-bit
+  else \ If no, time for a vcom toggle command !
+    lcd-select
+    -1 lcd-vcom xor!
+    0 lcd-vcom @ if 2 or then >lcd
+    0 >lcd
+    lcd-deselect
+  then
+;
+
+: lcd-clear ( -- )
+  lcd-select
+  4 lcd-vcom @ if 2 or then >lcd
+  0 >lcd
+  lcd-deselect
+;
+
+: lcd-line ( addr line -- )
+  lcd-select
+  1 lcd-vcom @ if 2 or then >lcd ( Command to write a line )
+  >lcd ( Select line )
+  12 0 do
+    dup i + c@ >lcd
+  loop
+  drop
+  0 >lcd
+  0 >lcd
+  lcd-deselect
+;
+
+: lcd-image ( addr -- )
+  lcd-select
+  1 lcd-vcom @ if 2 or then >lcd ( Command to write a line )
+
+  97 1 do
+    i >lcd \ Line number
+    12 0 do
+      dup c@ >lcd
+      1+
+    loop
+    0 >lcd \ Trailer
+  loop
+  drop
+  0 >lcd \ Finished
+  lcd-deselect  
+;
+
+: init-lcd ( -- )
+
+  1 5 lshift P6OUT cbis!             \ Vcc high
+  lcd-deselect                        \ CS low
+  1 5 lshift 1 6 lshift or P6DIR cbis! \ Vcc and CS Output
+
+  1 6 lshift P1OUT cbis!   \ Enable LCD
+  1 6 lshift P1DIR cbis!    \ Output
+
+  lcd-clk-low                 \ CLK low
+  1 2 lshift 1 or  P3DIR cbis! \ CLK and SIMO Output
+
+  lcd-clear
+
+  \ Frame frequency needs to be between 1 and 60 Hz.
+  $5A13 $15C ! \ Set Watchdog to SMCLK / 2^19 = 8 MHz / 2^19 = ~15 Hz.
+  ['] lcd-toggle-vcom irq-watchdog !
+  1 $100 bis! \ Set WDTIE bit in SFRIE1 register
+  eint
+;
+
+\ -----------------------------------------------------------------------------
+\   Time for Pixels !
+\ -----------------------------------------------------------------------------
+
+96 8 /  96 * buffer: image
+
+: refresh ( -- ) image lcd-image ;                      \ Update graphics
+: clrscr  ( -- ) image 96 8 /  96 * 255 fill lcd-clear ; \ Clear screen
+
+: pixeladdr ( x y -- pattern c-addr ) \ X and Y from 0 to 95, no checks
+  12 * image + ( x y-addr )
+  swap ( y-addr x )
+  dup shr shr shr ( y-addr x x-addr )
+  >r ( y-addr x  R: x-addr )
+  1 swap 7 and lshift ( y-addr pattern R: x-addr )
+  swap r> +
+2-foldable ;
+
+: setpixel ( x y -- ) pixeladdr cbic! ;
+: clrpixel ( x y -- ) pixeladdr cbis! ;
+: xorpixel ( x y -- ) pixeladdr cxor! ;
+
+\ -----------------------------------------------------------------------------
+\   A small graphics demo
+\ -----------------------------------------------------------------------------
+
+: demo ( -- )
+  init-lcd
+  clrscr
+  
+  96 0 do \ Draw a border
+     0  i setpixel
+    95  i setpixel
+     i  0 setpixel
+     i 95 setpixel
+  loop
+
+  53 42 do \ Draw crosshair
+    i 47 setpixel
+    47 i setpixel
+  loop
+
+  refresh
+;

@@ -1,0 +1,22 @@
+\ ANSifications
+\
+\ Refer to http://lars.nocrew.org/forth2012/
+
+\ -----------------------------------------------------------------------------
+\ compare
+\ -----------------------------------------------------------------------------
+
+: same? ( addr1 u1 addr2 u2 - flag ) compare ;  \ remember Mecrisp definition
+
+: compare ( addr1 u1 addr2 u2 - n )             \ see lbForth string.fth 
+  over + swap ?do                               \           and core.fth 
+    dup 0= if 2drop -1 unloop exit then
+    over c@ i c@ - dup 0<> 
+    if 0< 2* 1+  >r 2drop r> unloop exit else drop then 
+    1 swap over -  >r + r>
+  loop
+  nip 0 > negate ;
+
+\ Testing:
+
+\ : test1 s" 1234" s" 123" compare . ; test1

@@ -1,0 +1,26 @@
+
+\ Red   LED on P1.0
+\ Green LED on P6.6
+
+$200 constant P1IN
+$202 constant P1OUT
+$204 constant P1DIR
+
+$241 constant P6IN
+$243 constant P6OUT
+$245 constant P6DIR
+
+\ 8 cycles per loop run for 1 us @ 8 MHz.
+: us 0 ?do [ $3C00 , $3C00 , ] loop ;
+: ms 0 ?do 998 us loop ;
+
+: blinky ( -- )
+  1 P1DIR c!
+  1 6 lshift P6DIR c!
+
+  begin
+    1 P1OUT cxor!
+    200 ms
+    1 6 lshift P6OUT cxor!
+  key? until
+;

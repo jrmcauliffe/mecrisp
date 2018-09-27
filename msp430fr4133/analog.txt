@@ -1,0 +1,89 @@
+
+\ Analogs to capture the world !
+
+$700 constant ADCCTL0
+$702 constant ADCCTL1
+$704 constant ADCCTL2
+$70A constant ADCMCTL0
+$712 constant ADCMEM0
+
+$164 constant SYSCFG2
+
+: prepare-ain ( channel -- )
+  \ $1FF syscfg2 bic! \ All channels off
+  1 swap lshift syscfg2 bis! \ Enable input channel A0 to A9
+;
+
+: analog ( channel -- u )
+
+$2010 ADCCTL0 !    \ ADC on, 16 cycles sampling time
+     ADCMCTL0 !    \ Select channel and reference. Default: Vcc and GND
+1 9 lshift
+3 5 lshift or
+      ADCCTL1 !    \ Clock settings - divide 5 MHz MOSC / (3+1).
+  $10 ADCCTL2 !    \ 10 Bits resolution
+ 3 ADCCTL0 bis! \ Enable and start conversion
+
+  begin pause 1 ADCCTL1 bit@ not until \ Wait for conversion to finish
+  ADCMEM0 @
+  0 ADCCTL0 !    \ ADC off
+;
+
+\ -----------------------------------------------------------------------------
+\  Which voltage we are running on ?
+\ -----------------------------------------------------------------------------
+
+: s>f ( n -- f ) 0 swap inline ; \ Convert single to s31.32 fixpoint
+: f>n ( f -- n ) nip    inline ; \ Convert fixpoint to single, without rounding
+
+: enable-1.5v-ref ( -- )
+  $A5 $121 c! \ PMMCTL0+1 Password
+  1 $124 bis!  \ PMMCTL2 Enable internal reference
+  0 $121 c!     \ Lock again
+  200 0 do loop  \ Wait a bit for the reference to settle (>400 clocks)
+;
+
+\ Determine Vcc by measuring internal 1.5V reference voltage on channel 13 with VCC as reference.
+\ Vcc = 1.5 V * (1023 / Sampled-Reference-Voltage)
+
+: measure-vcc ( -- f ) 1023,0 1,5 f* 13 analog s>f f/ ;
+: vcc. ( -- ) enable-1.5v-ref measure-vcc 2 f.n ." V " ;
+
+\ -----------------------------------------------------------------------------
+\  Temperature sensor
+\ -----------------------------------------------------------------------------
+
+: enable-temp-sensor ( -- )
+  $A5 $121 c! \ PMMCTL0+1 Password
+  8 $124 bis!  \ PMMCTL2 Enable temperature sensor
+  0 $121 c!     \ Lock again
+;
+
+\ Measure temperature on analog channel 12.
+\ VSENSE = TCSENSOR × (Temperature, °C) + VSENSOR,
+
+\ Voltage = Temperature * 3.35 mV/°C + 1013 mV (See Datasheet)
+\ Sampled with 1.5V reference:
+
+\ Temp-ADC = (Temperature * 3.35 mV/°C + 1013 mV) * 1023 / 1.5 V
+\ Temp-ADC = Temperature * 2.2847/°C + 690.87
+\ --> Temperature = (Temp-ADC - 690.87) / 2.2847
+
+\ Unfortunately, the offset may be very large ! Beware of snow and ice :-)
+
+: measure-temp ( -- f )
+  0.  200 0 do 12 $10 or analog 0 d+ loop 200 um/mod nip  \ Average 200 measurements with 1.5V reference because of strong noise.
+  s>f 690,87 d- 2,2847 f/                                  \ Calculate uncalibrated temperature...
+;
+
+: temp. ( -- ) enable-temp-sensor enable-1.5v-ref measure-temp 2 f.n ." °C " ;
+
+: random ( -- u ) 
+ ( Random numbers with noise of temperature sensor on ADC )
+   0
+   32 0 do
+     shl
+    $10 12 or analog 1 and
+    xor
+  loop
+;

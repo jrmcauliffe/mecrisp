@@ -1,0 +1,63 @@
+#!/bin/bash
+
+cd mecrisp-source
+./assemble
+cd ..
+
+cd mecrimemu-source
+fpc -XX -O3 mecrimemu.pas
+rm *.ppu
+rm *.o
+cd ..
+
+# -----------------------------------------------------------------------------
+
+{
+   echo -e "compiletoflash\n"
+   cat common/insight.txt
+   cat common/cornerstone-flash.txt
+   echo -e "\n cornerstone eraseflash\n"
+   echo -e "0 \$120 !\n"
+   # cat -
+} > Coresource-Flash.txt
+
+# {
+#    echo -e "compiletoflash\n"
+#    cat common/insight.txt
+#    cat common/cornerstone-fram.txt
+#    echo -e "\n cornerstone eraseflash\n"
+#    echo -e "0 \$120 !\n"
+#    # cat -
+# } > Coresource-FRAM.txt
+
+# -----------------------------------------------------------------------------
+# Insight enhanced image for MSP430F2274
+
+cd msp430f2274
+rm *.bin
+
+../mecrimemu-source/mecrimemu hex forth-mecrisp-msp430f2274.hex speicher 0x200 0xD3FF flash 0xD400 0xFFFF terminal image 0x8000 0xFFFF forth-mecrisp-msp430f2274-with-insight.bin definitionen ../Coresource-Flash.txt
+msp430-objcopy --change-addresses 0x8000 -I binary -O ihex forth-mecrisp-msp430f2274-with-insight.bin forth-mecrisp-msp430f2274-with-insight.hex
+
+rm *.bin
+cd ..
+
+# -----------------------------------------------------------------------------
+# Insight enhanced image for MSP430G2553
+
+cd msp430g2553
+rm *.bin
+
+../mecrimemu-source/mecrimemu hex forth-mecrisp-msp430g2553.hex speicher 0x200 0xD3FF flash 0xD400 0xFFFF terminal image 0xC000 0xFFFF forth-mecrisp-msp430g2553-with-insight.bin definitionen ../Coresource-Flash.txt
+msp430-objcopy --change-addresses 0xC000 -I binary -O ihex forth-mecrisp-msp430g2553-with-insight.bin forth-mecrisp-msp430g2553-with-insight.hex
+
+../mecrimemu-source/mecrimemu hex forth-mecrisp-msp430g2553-lowpower.hex speicher 0x200 0xD3FF flash 0xD400 0xFFFF terminal image 0xC000 0xFFFF forth-mecrisp-msp430g2553-lowpower-with-insight.bin definitionen ../Coresource-Flash.txt
+msp430-objcopy --change-addresses 0xC000 -I binary -O ihex forth-mecrisp-msp430g2553-lowpower-with-insight.bin forth-mecrisp-msp430g2553-lowpower-with-insight.hex
+
+rm *.bin
+cd ..
+
+# -----------------------------------------------------------------------------
+# Tidy up
+
+rm Coresource-Flash.txt

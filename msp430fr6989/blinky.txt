@@ -1,0 +1,21 @@
+
+\ Pins wirings internal:
+
+\   P1.0 Red LED
+\   P9.7 Green LED
+\   P3.4 TXD
+\   P3.5 RXD
+\   P1.1 Button S1
+\   P1.2 Button S2
+
+$200 constant P1IN
+$202 constant P1OUT
+$204 constant P1DIR
+
+: blinky ( -- )
+  1 P1DIR c!
+  begin
+    1 P1OUT cxor!
+    60000 0 do loop
+  key? until
+;

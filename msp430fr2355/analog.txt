@@ -1,0 +1,95 @@
+
+\ Analogs to capture the world !
+
+$700 constant ADCCTL0
+$702 constant ADCCTL1
+$704 constant ADCCTL2
+$70A constant ADCMCTL0
+$712 constant ADCMEM0
+
+: analog ( channel -- u )
+
+$2010 ADCCTL0 !    \ ADC on, 16 cycles sampling time
+     ADCMCTL0 !    \ Select channel and reference. Default: Vcc and GND
+1 9 lshift
+3 5 lshift or
+      ADCCTL1 !    \ Clock settings - divide 5 MHz MOSC / (3+1).
+  $20 ADCCTL2 !    \ 12 Bits resolution
+ 3 ADCCTL0 bis! \ Enable and start conversion
+
+  begin pause 1 ADCCTL1 bit@ not until \ Wait for conversion to finish
+  ADCMEM0 @
+  0 ADCCTL0 !    \ ADC off
+;
+
+\ -----------------------------------------------------------------------------
+\  Which voltage we are running on ?
+\ -----------------------------------------------------------------------------
+
+: s>f ( n -- f ) 0 swap inline ; \ Convert single to s31.32 fixpoint
+: f>n ( f -- n ) nip    inline ; \ Convert fixpoint to single, without rounding
+
+: enable-1.5v-ref ( -- )
+  $A5 $121 c! \ PMMCTL0+1 Password
+  1 $124 bis!  \ PMMCTL2 Enable internal reference
+  0 $121 c!     \ Lock again
+  200 0 do loop  \ Wait a bit for the reference to settle (>400 clocks)
+;
+
+\ Determine Vcc by measuring internal 1.5V reference voltage on channel 13 with VCC as reference.
+\ Vcc = 1.5 V * (4095 / Sampled-Reference-Voltage)
+
+: measure-vcc ( -- f ) 4095,0 1,5 f* 13 analog s>f f/ ;
+: vcc. ( -- ) enable-1.5v-ref measure-vcc 2 f.n ." V " ;
+
+\ -----------------------------------------------------------------------------
+\  Temperature sensor
+\ -----------------------------------------------------------------------------
+
+: enable-temp-sensor ( -- )
+  $A5 $121 c! \ PMMCTL0+1 Password
+  8 $124 bis!  \ PMMCTL2 Enable temperature sensor
+  0 $121 c!     \ Lock again
+;
+
+\ Measure temperature on analog channel 12.
+\ VSENSE = TCSENSOR × (Temperature, °C) + VSENSOR,
+
+\ Voltage = Temperature * 2.32 mV/°C + 788 mV (See Datasheet)
+\ Sampled with 1.5V reference:
+
+\ Temp-ADC = (Temperature * 2.32 mV/°C + 788 mV) * 4095 / 1.5 V
+\ Temp-ADC = Temperature * 6.336/°C + 2151.2
+\ --> Temperature = (Temp-ADC - 2151.2) / 6.336
+\ Value is given for 30°C...
+
+\ Unfortunately, the offset may be very large ! Beware of snow and ice :-)
+
+: measure-temp ( -- f )
+  0.  200 0 do 12 $10 or analog 0 d+ loop 200 um/mod nip  \ Average 200 measurements with 1.5V reference because of strong noise.
+  s>f 2151,2 d- 6,336 f/ 30,0 d+                           \ Calculate uncalibrated temperature...
+;
+
+: temp. ( -- ) enable-temp-sensor enable-1.5v-ref measure-temp 2 f.n ." °C " ;
+
+: random ( -- u ) 
+ ( Random numbers with noise of temperature sensor on ADC )
+   0
+   32 0 do
+     shl
+    $10 12 or analog 1 and
+    xor
+  loop
+;
+
+\ -----------------------------------------------------------------------------
+\  Analog brightness on LED
+\ -----------------------------------------------------------------------------
+
+$20A constant P1SEL0
+$20C constant P1SEL1
+
+: led-brightness ( -- u )
+  1 P1SEL0 cbis!  1 P1SEL1 cbis!  \ PSEL=11 for analog inputs
+  begin 0 analog . cr key? until
+;

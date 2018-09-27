@@ -1,0 +1,38 @@
+
+\ --------------------------------------------------
+\  Multitasking insight with more info
+\ --------------------------------------------------
+
+: shownx ( daddr n -- ) \ print n words from daddr
+  3 rshift 0
+  cr 2over hex. hex.    ( daddr n 0 )
+  do cr i hex. ."  : "
+    2dup i 8 * 0     d+ x@ hex.
+    2dup i 8 * 2+  0 d+ x@ hex.
+    ."  "
+    2dup i 8 * 4 + 0 d+ x@ hex.
+    2dup i 8 * 6 + 0 d+ x@ hex.
+  loop
+  2drop
+  cr
+  cr
+;
+
+: debugtasks ( -- ) \ Show tasks currently in round-robin list
+  hook-pause @ singletask \ Stop multitasking as this list may be changed during printout.
+
+  \ Start with current task.
+  next-task cr
+
+  begin
+    ( Task-Address )
+    dup             ." Task Address: " hex.
+    dup 0 stackspace cell+ 2* shownx  \ dump the complete space
+
+    @ dup next-task = \ Stop when end of circular list is reached
+  until
+  drop
+
+  hook-pause ! \ Restore old state of multitasking
+;
+

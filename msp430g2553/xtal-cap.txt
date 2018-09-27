@@ -1,0 +1,50 @@
+\ By Glen Worstell
+
+1  0 lshift constant BIT0
+1  1 lshift constant BIT1
+1  2 lshift constant BIT2
+1  3 lshift constant BIT3
+1  4 lshift constant BIT4
+1  5 lshift constant BIT5
+1  6 lshift constant BIT6
+1  7 lshift constant BIT7
+
+1  8 lshift constant BIT8
+1  9 lshift constant BIT9
+1 10 lshift constant BIT10
+1 11 lshift constant BIT11
+1 12 lshift constant BIT12
+1 13 lshift constant BIT13
+1 14 lshift constant BIT14
+1 15 lshift constant BIT15
+
+\ clocks.fth puts ACLK on P1.0 (pin 2) and SMCLK on P1.4 (pin 6)
+\ for the MSP430 Launchpad, 2 (10 pF) is usually the best value,
+\   but the default is 1 (6 pF).
+\ If you are using the Launchpad I suggest adding code to "init"
+\ that sets the correct value.
+
+: showClocks ( -- )				\ puts the clocks on the pins.
+  BIT0 BIT4 or P1DIR cbis!
+  BIT0 BIT4 or P1SEL cbis!
+;
+
+$53 constant BCSCTL3 			\ the register for setting the cap value.
+
+: setCap ( n -- ) 				\ sets cap value to 0, 1, 2,or 3; default is 1 (6 pF).
+  BIT2 BIT3 or BCSCTL3 cbic! 	\ clear the old bits.
+  3 and							\ make sure value is within limits.
+  2 lshift						\ get the bits into the right place.
+  BCSCTL3 cbis!
+;
+
+: seeCap ( -- ) 				\ gets the value 0..2 and displays it.
+  BCSCTL3 @ 2 rshift 3 and		
+  ." cap value = "
+  case
+    0 of ." 0, 1 pF" endof
+    1 of ." 1, 6 pF" endof
+    2 of ." 2, 10 pF" endof
+    3 of ." 3, 12.5 pf" endof
+  endcase
+;

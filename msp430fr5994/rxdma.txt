@@ -1,0 +1,264 @@
+
+\ rxdma.txt
+\
+\ DMA is used to copy received characters to a buffer in extended memory.
+\ by skvery
+\ license The Unlicense ( no anything license :-)
+\ ISO 8601 version 20170820022000
+
+compiletoflash \ at 8 Mhz it is ok to use flash only
+
+: init nop ;   \ remove if init is already defined.
+
+\ Relic of assembler code for reference replaced in version 2.0.6 with xx!
+\  Wortbirne Flag_visible, "22!" ; Store ( d addr -- ) using mov.a
+\    popda r7 ; Fetch address
+\    word 1800h,44F7h,0000h
+\  ret
+\ see 22!
+\ FD26: 4437  mov.w @r4+, r7
+\ FD28: 1800  Unknown Opcode .w r0
+\ FD2A: 44F7  mov.b @r4+, 0h(r7)
+\ FD2C: 0000
+\ FD2E: 4130  mov.w @r1+, r0
+\ Write address register using extended code words
+\ : 22! ( d addr -- )
+\   [
+\   $4437 ,
+\   $1800 ,
+\   $44F7 ,
+\   $0000 ,
+\   ]
+\ ;
+
+\ Extended memory utilities
+
+\ simple static memory allocation pointer
+\ (relocate buffer position as required)
+0 variable #x                  \ counter of bytes allocated
+65536. 2variable (x)           \ use $10000 onwards
+
+\ (x) is the pointer to the first free memory location
+\ #x is the number of bytes allocated since last get#
+\ no further checks are performed
+\ no automatic alignement performed
+
+\ use for initialised:
+\   1 1 dx,  1 x, 1 x, [char] % cx, xarray (name)
+\ (use get# to get size #name as follows:
+\   get# constant #name
+
+\ use for buffer:
+\   7 constant #name
+\   #name xbuffer (name)
+\ or
+\   7 xbuffer (name)
+\   get# constant #name
+
+: xalign ( n -- )              \ align (x) to n boundary for next n values
+  dup 1- swap 0                \   ( assumes and does not check for 2^ )
+  (x) 2@ d- drop and 0 (x) 2@ d+ (x) 2!
+  0 #x !                       \ reset allocation counter for new allocate
+;
+
+: xbuffer ( n -- ) ( -- a ) \ byte size follow with (name)
+  #x @ + 0 (x) 2@ 2tuck d+ (x) 2!  \ ( @(oldx) -- ) (newx) saved
+  2dup (x) 2@ 2swap d- drop #x ! 2constant
+;
+
+\ : xarray ( -- ) ( -- a ) \ constants followed by (name)
+\   0 xbuffer
+\
+\ ;
+
+\ : cx, ( c -- )
+\   #x @ 0 (x) 2@ d+ cx!
+\   1 #x +!
+\ ;
+
+\ : x, ( u -- )
+\   #x @ 0 (x) 2@ d+ x!
+\   2 #x +!
+\ ;
+
+\ : xx, ( -- )
+\   x,
+\   x,
+\ ;
+
+\ : resetbuffer ( u addr -- ) \ usage #name (name) reset counted buffer
+\   x!
+\
+\ ;
+
+\ allocate xmemory
+\ 1024 constant 1K
+2048 constant 2K
+\ 4096 constant 4K
+\ 8192 constant 8K
+\ 16384 constant 16K
+\ 32768 constant 32K
+\ 65536 constant 64K
+
+2K constant #R0Buffer          \ buffer size for rx
+2K xalign                      \
+#R0Buffer xbuffer (R0Buffer)
+
+$0510 constant DMA0-Base   \ Channel 0: 0510h,
+\ $0520 constant DMA1-Base   \ Channel 1: 0520h,
+\ $0530 constant DMA2-Base   \ Channel 2: 0530h,
+\ $0540 constant DMA3-Base   \ Channel 3: 0540h,
+\ $0550 constant DMA4-Base   \ Channel 4: 0550h,
+\ $0560 constant DMA5-Base   \ Channel 5: 0560h,
+
+$0500 constant DMACTL0     \ DMA module control 0 DMACTL0 00h
+\ $0502 constant DMACTL1     \ DMA module control 1 DMACTL1 02h
+\ $0504 constant DMACTL2     \ DMA module control 2 DMACTL2 04h
+\ $0506 constant DMACTL3     \ DMA module control 3 DMACTL3 06h
+$0508 constant DMACTL4     \ DMA module control 4 DMACTL4 08h
+\ $050E constant DMACIV      \ DMA interrupt vector DMAIV 0Eh
+
+$00 constant DMAxCTL       \ DMA channel x control DMA0CTL 00h
+$02 constant DMAxSA        \ DMA channel x source address low DMA0SAL 02h
+$06 constant DMAxDA        \ DMA channel x dest address low DMA0DAL 06h
+$0A constant DMAxSZ        \ DMA channel x transfer size DMA0SZ 0Ah
+
+$80       constant .15
+%00010000 constant .4
+%00001000 constant .3
+$01       constant .0
+
+.4 constant DMAEN
+.3 constant DMAIFG
+
+\ Serial ports
+
+\ UCA0 - P2.0 and P2.1 Launchpad diagnostic port ( 115200 bd )
+
+$05C0 constant eUSCI-A0-Base \ eUSCI_A0 Registers (Base Address: 05C0h)
+
+$00 constant CTLW0          \ eUSCI_A control word 0    UCA2CTLW0 00h
+\ $02 constant CTLW1          \ eUSCI_A control word 1  UCA2CTLW1 02h
+$06 constant BRW            \ eUSCI_A baud rate word    UCA2BR0   06h
+$08 constant MCTLW          \ eUSCI_A mod control       UCA2MCTLW 08h
+\ $0A constant STATW          \ eUSCI_A status word     UCA2STATW 0Ah
+$0C constant RXBUF          \ eUSCI_A receive buffer    UCA2RXBUF 0Ch
+$1C constant IFG            \ eUSCI_A interrupt flags   UCA2IFG   1Ch
+
+ .0 constant UCRXIFG         \ Receive interrupt flag. UCRXIFG is set when
+                             \ UCAxRXBUF is ready.
+ .0 constant UCSWRST         \ byte software reset
+.15 constant SMCLK           \ byte SMCLK select
+
+\ BRCLK   Baud Rate UCOS16 UCBRx UCBRFx UCBRSx
+\
+\ 8000000    300         1  1666     10   0xD6
+\ 8000000    600         1   833      5   0x49
+\ 0000000   1200         1   416     10   0xD6
+\ 8000000   2400         1   208      5   0x49
+\ 8000000   4800         1   104      2   0xD6
+\ 8000000   9600         1    52      1   0x49
+\ 8000000  19200         1    26      0   0xD6
+\ 8000000 115200         1     4      5   0x55
+
+    4 constant BRW115200
+$5551 constant BRSF115200
+
+: uca0config115200 ( -- )   \ 115200 bd 8n1
+  UCSWRST                  eUSCI-A0-Base CTLW0 + !     \ stop UCA
+  SMCLK                    eUSCI-A0-Base CTLW0 + bis!
+  BRW115200                eUSCI-A0-Base BRW   + !
+  BRSF115200               eUSCI-A0-Base MCTLW + !
+
+\   .0 .1 or             P2_Base PxSEL0 + cbic!          already set
+\   .0 .1 or             P2_Base PxSEL1 + cbis!          already set
+
+  UCSWRST                  eUSCI-A0-Base CTLW0 + bic!  \ start UCA
+;
+
+\ TRIGGER  CHANNEL 0  CHANNEL 1  CHANNEL 2  CHANNEL 3  CHANNEL 4  CHANNEL 5
+
+\          _________
+\      14 |UCA0RXIFG| UCA0RXIFG  UCA0RXIFG  UCA2RXIFG  UCA2RXIFG  UCA2RXIFG
+
+\ DMACTL0 - DMA1TSEL DMA0TSEL
+
+\ Configure DMA
+
+: cdmauca0rx ( -- ) \ setup dma0 for rx on uca0 with repeated single
+                    \ transfer
+  DMAEN                       DMAxCTL DMA0-Base + bic! \ stop dma
+  $1F                         DMACTL0 bic!
+  14                          DMACTL0 bis!
+  $4C80                       \ DMADT = 100b DMADSTINCR = 11b 7 
+                              \ DMADSTBYTE = 1  6 DMASRCBYTE = 0
+                              DMAxCTL DMA0-Base + !
+  eUSCI-A0-Base RXBUF +       DMAxSA  DMA0-Base + !    \ source setup
+;
+
+\ DMARMWDIS might be required for safe interrupts and multitasking
+: cdmactl4 ( -- ) \ setup dmactl4 to set DMARMWDIS
+  .2                          DMACTL4 bis!
+;
+
+\ to restore original hooks
+0 variable O-key?
+0 variable O-key
+
+#R0Buffer 1 - constant R0Mask  \ helper
+0 variable key#
+
+: term-key? ( -- flag )
+  pause
+  key# @ DMAxSZ  DMA0-Base + @ + R0Mask and \ 0<> this is not really needed.
+;
+
+: term-key ( -- char )
+  begin term-key? until
+  (R0Buffer) key# @ R0Mask and 0 d+ cx@ 1 key# +!
+;
+
+: cRxDMA ( -- )                \ configure terminal rx buffer
+  uca0config115200
+  cdmauca0rx
+  (R0Buffer)                  DMAxDA  DMA0-Base + 0 xx!
+  #R0Buffer                   DMAxSZ  DMA0-Base + !
+  0 key# !                    \ reset pointer to start of buffer
+  DMAEN                       DMAxCTL DMA0-Base + bis!        \ start dma
+  UCRXIFG                     IFG     eUSCI-A0-Base + bic!    \ clear flag
+                                                          \ to confirm rx
+  ['] term-key? hook-key? !
+  ['] term-key  hook-key  !
+;
+
+: termRxDMA ( -- ) \          reset terminal hooks as per old values and
+                   \          stop DMA process
+  DMAEN                       DMAxCTL DMA0-Base + bic! \ stop dma
+  ['] serial-key? hook-key?  !
+  ['] serial-key  hook-key   !
+;
+
+: initrxdma ( -- ) \ initialisation routine
+  cdmactl4
+  cRxDMA
+;
+
+\ Remember to chain init after reset
+: init init
+  initrxdma
+;
+
+init \ if not called later
+
+\ diagnostices
+
+: rxdma# ( -- u ) \ returns the offset of the buffer pointer
+  key# @ .
+;
+
+include cornerstone-fram.txt
+
+\ cornerstone keep-rxdma
+cornerstone eraseflash
+
+\ use eraseflashfrom to keep rxdma in place

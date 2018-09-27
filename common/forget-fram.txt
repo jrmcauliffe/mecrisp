@@ -1,0 +1,13 @@
+
+compiletoflash
+
+: forget ( -- ) \ Usage: forget name
+  compiletoflash \ Careful: Use this for definitions in FRAM only.
+  ' >r            \ Tick gives code start address of the definition that we wish to clear.
+  dictionarystart  \ Search dictionary to find dictionary entry of this definition
+  begin
+    dup 1+ skipstring 2+ r@ = if dup eraseflashfrom then \ Eraseflashfrom returns for core definitions
+    dictionarynext
+  until
+  drop rdrop \ If forget is used for a core definition which is never erased.
+;

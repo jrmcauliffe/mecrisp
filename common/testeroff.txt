@@ -1,0 +1,21 @@
+\ notester.fs
+( include either tester.fs or notester.fs )
+\ adapted from longcomment.txt
+0 variable verbose
+: t{ ( -- ) \ Long comment
+  begin
+    token  \ Get next token
+    dup 0= if 2drop cr query token then \ If length of token is zero, end of 
+                                        \ line is reached. 
+                                        \ Fetch new line. Fetch new token.
+    s" }t" compare  \ Search for }t
+  until
+  immediate 0-foldable
+;
+: testing  ( -- )                                            \ Talking comment.
+  source verbose @
+  if dup >r type cr r> >in !
+  else >in ! drop [char] * emit
+  then 
+;
+t{ 1 1 + -> 2 }t

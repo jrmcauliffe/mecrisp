@@ -1,0 +1,77 @@
+\ Subject: tester.fr
+( include either tester.fs or notester.fs )
+\ From: John Hayes S1I
+\ Date: Mon, 27 Nov 95 13:10:09 PST
+\ http://github.com/gerryjackson/forth2012-test-suite/blob/master/src/tester.fr
+\ (C) 1995 JOHNS HOPKINS UNIVERSITY / APPLIED PHYSICS LABORATORY
+\ MAY BE DISTRIBUTED FREELY AS LONG AS THIS COPYRIGHT NOTICE REMAINS.
+\ VERSION 1.2
+\ 2015/11/24 Replaced Core Ext word <> with = 0=
+\ 2015/03/31 Variable #ERRORS added and incremented for each error reported.
+\ 2009/01/09 The words { and } have been changed to T{ and }T respectively to
+\ agree with the Forth 200X file ttester.fs. This avoids clashes with
+\ locals using { ... } and the FSL use of }
+\ 2017/05/08 ISO 8601 dates and converted to lower case 
+
+\ Set the following flag to 2 for max verbose output; this may
+\ allow you to tell which test caused your system to hang.
+
+0 variable verbose
+
+: empty-stack  ( ... -- )         \ Empty stack: handles underflowed stack too.
+depth ?dup 
+if dup 0< 
+  if negate 0 
+    do 0 loop 
+  else 0 
+    do
+      drop
+    loop 
+  then
+then
+;
+0 variable #errors
+: error  ( c-addr u -- )                 \ Display an error message followed by
+                                                 \ the line that had the error.
+cr type source type                       \ display line corresponding to error
+empty-stack                                       \ throw away every thing else
+#errors @ 1 + #errors !
+quit                              \ *** uncomment this line to quit on an error
+;
+align
+0 variable actual-depth                                          \ stack record
+$20 cells buffer: actual-results
+: t{  ( -- )                                                  \ Sytactic sugar.
+;
+: ->  ( ... -- )                           \ Record depth and content of stack.
+depth dup actual-depth !                                         \ record depth
+?dup 
+if 0                                           \ if there is something on stack
+  do actual-results i cells + !
+  loop                                                              \ save them
+then 
+;
+: }t  ( ... -- )                 \ Compare stack (expected) contents with saved
+                                                           \ (actual) contents.
+depth actual-depth @ =
+if                                                            \ if depths match
+  depth ?dup 
+  if                                       \ if there is something on the stack
+  0 
+    do                                                    \ for each stack item
+      actual-results i cells + @                 \ compare actual with expected
+      tuck = 0= 
+      if . ." =" s" incorrect result: " error leave else drop then
+    loop
+  then
+else                                                           \ depth mismatch
+s" wrong number of results: " error
+then 
+;
+: testing  ( -- )                                            \ Talking comment.
+source verbose @
+if dup >r type cr r> >in !
+else >in ! drop [char] * emit
+then 
+;
+t{ 1 1 + -> 2 }t

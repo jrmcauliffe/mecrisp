@@ -1,0 +1,86 @@
+
+\ -----------------------------------------------------------------------------
+\ A small example for multitasking
+\ -----------------------------------------------------------------------------
+
+0 variable counter
+: c ( -- ) counter @ u. ;
+
+task: ct
+: ct& ct activate
+  begin 1 counter +! pause again ;
+
+ct& multitask tasks
+
+
+\ -----------------------------------------------------------------------------
+\ Example on how to activate tasks through interrupt handlers
+\ The Watchdog timer configuration is for classic MSP430 chips.
+\ -----------------------------------------------------------------------------
+
+compiletoram eint multitask
+
+0 variable seconds
+task: timetask
+
+: time& ( -- )
+  timetask background
+    begin
+      key? if boot-task wake then
+      1 seconds +!
+      seconds @ . cr
+      stop
+    again
+;
+
+time& tasks
+
+: tick ( -- ) timetask wake ;
+
+ ' tick irq-watchdog !
+ 1 0 c!       \ Enable Watchdog IRQ in IE1
+ $5A10 $120 ! \ Set Watchdog for ACKL/32768 to get an one second interrupt
+
+stop \ Idle the boot task
+
+\ --------------------------------------------------
+\  Semaphores
+\ --------------------------------------------------
+
+: wait? ( addr -- flag )
+  pause @
+;
+: wait ( addr -- )
+  begin dup wait? until
+  0 swap !
+;
+
+: signal ( addr -- )
+  1 swap !
+;
+
+\ -----------------------------------------------------------------------------
+\  Example and a test for Catch & Throw
+\ -----------------------------------------------------------------------------
+
+compiletoram
+
+: could-fail ( -- char )
+    KEY DUP [CHAR] Q =  IF  1 THROW THEN ;
+
+: do-it ( a b -- c)   2DROP could-fail ;
+
+: try-it ( --)
+    1 2 ['] do-it  CATCH  IF ( x1 x2 )
+        2DROP ." There was an exception" CR
+    ELSE ." The character was " EMIT CR
+    THEN
+;
+
+: retry-it ( -- )
+    BEGIN  1 2 ['] do-it CATCH  WHILE
+       ( x1 x2) 2DROP  ." Exception, keep trying" CR
+    REPEAT ( char )
+    ." The character was " EMIT CR
+;
+

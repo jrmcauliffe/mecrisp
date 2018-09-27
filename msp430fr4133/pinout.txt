@@ -1,0 +1,469 @@
+
+compiletoflash
+
+\ A small example for multitasking which displays two analog channels and
+\ the state of all other Launchpad header pins on LCD.
+\   Requires display driver and multitasking, but everything necessary is included here.
+
+\ -----------------------------------------------------------
+\   Cooperative Multitasking
+\ -----------------------------------------------------------
+
+\ Configuration:
+
+32 cells constant stackspace \ 32 stack elements for every task
+
+\ Internal stucture of task memory:
+\  0: Pointer to next task
+\  2: Task currently active ?
+\  4: Saved stack pointer
+\  6: Handler for Catch/Throw
+\  Parameter stack space
+\  Return    stack space
+
+false 0 true flashvar-here 4 cells - 4 nvariable boot-task \ Boot task is active, without handler and has no extra stackspace.
+boot-task boot-task ! \ For compilation into RAM only
+
+boot-task variable up \ User Pointer
+: next-task  ( -- task )    up @ inline ;
+: task-state ( -- state )   up @ 1 cells + inline ;
+: save-task  ( -- save )    up @ 2 cells + inline ;
+: handler    ( -- handler ) up @ 3 cells + inline ;
+
+: (pause) ( stacks fly around )
+    [ $1206 , $1205 , ] \ push r6 & push r5 to save I and I'
+    rp@ sp@ save-task !  \ save return stack and stack pointer
+    begin
+      next-task @ up !     \ switch to next running task
+    task-state @ until
+    save-task @ sp! rp!  \ restore pointers
+    unloop ;              \ pop r5 & pop r6 to restore the loop registers
+
+: wake ( task -- ) 1 cells +  true swap ! ; \ Wake a random task (IRQ save)
+: idle ( task -- ) 1 cells + false swap ! ;  \ Idle a random task (IRQ save)
+
+\ -------------------------------------------------------
+\  Round-robin list task handling - do not use in IRQ !
+\ -------------------------------------------------------
+
+: stop ( -- ) false task-state ! pause ; \ Stop current task
+: multitask  ( -- ) ['] (pause) hook-pause ! ;
+: singletask ( -- ) [']  nop    hook-pause ! ;
+
+: task-in-list? ( task -- ? ) \ Checks if a task is currently inside of round-robin list (do not use in IRQ)
+  next-task
+  begin
+    ( Task-Address )
+    2dup = if 2drop true exit then
+    @ dup next-task = \ Stop when end of circular list is reached
+  until
+  2drop false
+;
+
+: previous ( task -- addr-of-task-before )
+  \ Find the task that has the desired one in its next field
+  >r next-task begin dup @ r@ <> while @ repeat rdrop
+;
+
+: insert ( task -- ) \ Insert a task into the round-robin list
+  dup task-in-list?  \ Is the desired task currently linked into ?
+  if drop else next-task @ over ! next-task ! then
+;
+
+: remove ( task -- ) \ Remove a task from the round-robin list
+  dup task-in-list?  \ Is the desired task currently linked into ?
+  if dup @ ( task next )
+     swap previous ( next previous ) !
+  else drop then
+;
+
+\ -----------------------------------------
+\ Create a new task - do not use in IRQ !
+\ -----------------------------------------
+
+: task: ( "name" -- )  stackspace cell+ 2*  4 cells +  buffer: ;
+
+: preparetask ( task continue -- )
+  swap >r ( continue R: task )
+
+    \ true  r@ 1 cells + ! \ Currently running
+      false r@ 3 cells + ! \ No handler
+
+    r@ 4 cells + stackspace + ( continue start-of-parameter-stack )
+      dup   r@ 2 cells + ! \ Start of parameter stack
+
+    dup stackspace + ( continue start-of-parameter-stack start-of-return-stack )
+    tuck      ( continue start-of-return-stack start-of-parameter-stack start-of-return-stack )
+    2 cells - ( continue start-of-return-stack start-of-parameter-stack start-of-return-stack* ) \ Adjust for saved loop index and limit
+    swap  !   ( continue start-of-return-stack ) \ Store the adjusted return stack pointer into the parameter stack
+    !         \ Store the desired entry address at top of the tasks return stack
+
+  r> insert
+;
+
+: activate ( task --   R: continue -- )
+  true over 1 cells + ! \ Currently running
+  r> preparetask
+;
+
+: background ( task --   R: continue -- )
+  false over 1 cells + ! \ Currently idling
+  r> preparetask
+;
+
+\ --------------------------------------------------
+\  Multitasking insight
+\ --------------------------------------------------
+
+: tasks ( -- ) \ Show tasks currently in round-robin list
+  hook-pause @ singletask \ Stop multitasking as this list may be changed during printout.
+
+  \ Start with current task.
+  next-task cr
+
+  begin
+    ( Task-Address )
+    dup             ." Task Address: " hex.
+    dup           @ ." Next Task: " hex.
+    dup 1 cells + @ ." State: " hex.
+    dup 2 cells + @ ." Stack: " hex.
+    dup 3 cells + @ ." Handler: " hex. cr
+
+    @ dup next-task = \ Stop when end of circular list is reached
+  until
+  drop
+
+  hook-pause ! \ Restore old state of multitasking
+;
+
+\ -----------------------------------------------------------------------------
+\ LCD driver for MSP430FR4133 Launchpad
+\ -----------------------------------------------------------------------------
+
+\ Pins wirings internal:
+\   P1.0 TXD & Red LED
+\   P1.1 RXD
+\   P1.2 Button S1
+\   P2.3 RTS
+\   P2.4 CTS
+\   P2.6 Button S2
+\   P4.0 Green LED
+
+$164 constant SYSCFG2
+
+$600 constant LCDCTL0
+$602 constant LCDCTL1
+$604 constant LCDBLKCTL
+$606 constant LCDMEMCTL
+$608 constant LCDVCTL
+$60A constant LCDPCTL0
+$60C constant LCDPCTL1
+$60E constant LCDPCTL2
+$614 constant LCDCSSEL0
+$616 constant LCDCSSEL1
+$618 constant LCDCSSEL2
+$61A constant LCDCSSEL3
+
+$620 constant LCDMEM \ Byte access LCD memory 0 ($620) to LCD memory 19 ($633)
+
+: lcd-init ( -- )
+
+  1 12 lshift SYSCFG2 bis!  \ R13/R23/R33/LCDCAP0/LCDCAP1 pins selected
+
+  $FFFF LCDPCTL0 !  \ L0~L26 & L36~L39 pins selected
+  $07FF LCDPCTL1 !
+  $00F0 LCDPCTL2 !  
+
+  1 6 lshift LCDCTL0 !   \ Set ACLK as clock source
+
+  \ LCD Operation - Mode 3, internal 3.08v, charge pump 256Hz
+   3 12 lshift    \ Divider for charge pump frequency - 1024 kHz
+  10  8 lshift or  \ Voltage for display drive
+   1  7 lshift or   \ Charge pump enable
+   1  6 lshift or    \ Reference voltage enable
+  LCDVCTL !
+
+  2 LCDMEMCTL !   \   Clear LCD memory
+
+  $000F LCDCSSEL0 !  \ Configure COMs and SEGs
+  $0000 LCDCSSEL1 !  \ L0, L1, L2, L3: COM pins
+  $0000 LCDCSSEL2 !
+
+  $21 LCDMEM    c! \  L0 = COM0, L1 = COM1
+  $84 LCDMEM 1+ c!  \ L2 = COM2, L3 = COM3
+
+  3 3 lshift      \ 4-mux
+  4 or             \ LCDS on
+  1 or              \ LCD on
+  LCDCTL0 bis!       \ Turn on LCD, 4-mux selected
+;
+
+\ -----------------------------------------------------------------------------
+\ Artwork for a 14-Segment Font
+\ -----------------------------------------------------------------------------
+
+create lcdchars           \ Additional artwork welcome !
+
+$0000 ,  \ 32: Space
+$B090 ,  \ 33 !
+$6000 ,  \ 34 " 
+$5073 ,  \ 35 # 
+$50B7 ,  \ 36 $
+$2824 ,  \ 37 %
+$A29A ,  \ 38 &
+$4000 ,  \ 39 ' 
+$2200 ,  \ 40 ( 
+$8800 ,  \ 41 ) 
+$FA03 ,  \ 42 * 
+$5003 ,  \ 43 + 
+$1000 ,  \ 44 , 
+$0003 ,  \ 45 - 
+$0100 ,  \ 46 . 
+$2800 ,  \ 47 / 
+$28FC ,  \ 48 0 
+$2060 ,  \ 49 1 
+$00DB ,  \ 50 2 
+$00F3 ,  \ 51 3 
+$0067 ,  \ 52 4 
+$00B7 ,  \ 53 5 
+$00BF ,  \ 54 6 
+$00E4 ,  \ 55 7 
+$00FF ,  \ 56 8 
+$00F7 ,  \ 57 9 
+$5000 ,  \ 58 :
+$4800 ,  \ 59 ;
+$2810 ,  \ 60 < 
+$0013 ,  \ 61 = 
+$8210 ,  \ 62 > 
+$10C5 ,  \ 63 ?
+
+$40DD ,  \ 64 @
+$00EF ,  \ 65 A
+$50F1 ,  \ 66 B
+$009C ,  \ 67 C
+$50F0 ,  \ 68 D
+$009F ,  \ 69 E
+$008F ,  \ 70 F
+$00BD ,  \ 71 G
+$006F ,  \ 72 H
+$5090 ,  \ 73 I
+$0078 ,  \ 74 J
+$220E ,  \ 75 K
+$001C ,  \ 76 L
+$A06C ,  \ 77 M
+$826C ,  \ 78 N
+$00FC ,  \ 79 O
+$00CF ,  \ 80 P
+$02FC ,  \ 81 Q
+$02CF ,  \ 82 R
+$00B7 ,  \ 83 S
+$5080 ,  \ 84 T
+$007C ,  \ 85 U
+$280C ,  \ 86 V
+$0A6C ,  \ 87 W
+$AA00 ,  \ 88 X
+$B000 ,  \ 89 Y
+$2890 ,  \ 90 Z
+$009C ,  \ 91 [
+$8200 ,  \ 92 \
+$00F0 ,  \ 93 ]
+$2040 ,  \ 94 ^
+$0010 ,  \ 95 _
+ 
+$8000 ,  \ 96  `
+$00EF ,  \ 97  a
+$50F1 ,  \ 98  b
+$009C ,  \ 99  c
+$50F0 ,  \ 100 d
+$009F ,  \ 101 e
+$008F ,  \ 102 f
+$00BD ,  \ 103 g
+$006F ,  \ 104 h
+$5090 ,  \ 105 i
+$0078 ,  \ 106 j
+$220E ,  \ 107 k
+$001C ,  \ 108 l
+$A06C ,  \ 109 m
+$826C ,  \ 110 n
+$00FC ,  \ 111 o
+$00CF ,  \ 112 p
+$02FC ,  \ 113 q
+$02CF ,  \ 114 r
+$00B7 ,  \ 115 s
+$5080 ,  \ 116 t
+$007C ,  \ 117 u
+$280C ,  \ 118 v
+$0A6C ,  \ 119 w
+$AA00 ,  \ 120 x
+$B000 ,  \ 121 y
+$2890 ,  \ 122 z
+$8892 ,  \ 123 {
+$5000 ,  \ 124 |
+$2291 ,  \ 125 }
+$A004 ,  \ 126 ~
+$0000 ,  \ 127 DEL
+
+: lcdchar ( c -- x ) \ Translates ASCII to LCD-Bitpatterns.                     
+  32 umax 127 umin
+  32 - cells lcdchars + @
+1-foldable ;
+ 
+\ -----------------------------------------------------------------------------
+\ Types your strings !
+\ -----------------------------------------------------------------------------
+
+: get-first-char ( addr len -- addr   len c ) over c@ ;
+: cut-first-char ( addr len -- addr+1 len-1 ) 1- swap 1+ swap ;
+
+0 variable lcdposition
+
+: lcd! ( x -- ) \ Display a character bitmap on given position
+  lcdposition @ case
+                  0 of lcdmem  4 + bis! endof
+                  1 of lcdmem  6 + bis! endof
+                  2 of lcdmem  8 + bis! endof
+                  3 of lcdmem 10 + bis! endof
+                  4 of lcdmem  2 + bis! endof
+                  5 of lcdmem 18 + bis! endof
+                drop
+                endcase  
+;
+
+: clearlcd ( -- ) lcdmem 2+ 18 0 fill ;
+
+: typelcd ( addr len -- )
+  clearlcd
+  0 lcdposition !
+
+  dup 0<> if get-first-char 45 =  \ Is this a "-" ? The display has a special segment for a minus at the beginning.
+             if $400 lcdmem 4 + bis! cut-first-char then
+          then
+
+  begin
+    dup 0<>
+  while
+    get-first-char lcdchar lcd! cut-first-char
+    dup 0<> if get-first-char 46 = \ Is this a "." ? Segments for decimal dots available !
+               if $100 lcd! cut-first-char then
+            then
+    1 lcdposition +!
+  repeat
+  2drop
+;
+
+\ -----------------------------------------------------------------------------
+\ Analogs to capture the world !
+\ -----------------------------------------------------------------------------
+
+$700 constant ADCCTL0
+$702 constant ADCCTL1
+$704 constant ADCCTL2
+$70A constant ADCMCTL0
+$712 constant ADCMEM0
+
+\ $164 constant SYSCFG2
+
+: prepare-ain ( channel -- )
+  \ $1FF syscfg2 bic! \ All channels off
+  1 swap lshift syscfg2 bis! \ Enable input channel A0 to A9
+;
+
+: analog ( channel -- u )
+
+$2010 ADCCTL0 !    \ ADC on, 16 cycles sampling time
+     ADCMCTL0 !    \ Select channel and reference. Default: Vcc and GND
+1 9 lshift
+3 5 lshift or
+      ADCCTL1 !    \ Clock settings - divide 5 MHz MOSC / (3+1).
+  $10 ADCCTL2 !    \ 10 Bits resolution
+ 3 ADCCTL0 bis! \ Enable and start conversion
+
+  begin pause 1 ADCCTL1 bit@ not until \ Wait for conversion to finish
+  ADCMEM0 @
+  0 ADCCTL0 !    \ ADC off
+;
+
+: s>f ( n -- f ) 0 swap inline ; \ Convert single to s31.32 fixpoint
+: f>n ( f -- n ) nip    inline ; \ Convert fixpoint to single, without rounding
+
+\ -----------------------------------------------------------------------------
+
+\ Pinout of MSP430FR4133 Launchpad:
+\
+\   1: Vcc          1: GND
+\   2: P8.1 (A9)    2: P1.7 (A7)
+\   3: RXD (P1.1)   3: P1.6 (A6)
+\   4: TXD (P1.0)   4: P5.0
+\   5: P2.7         5: /Reset
+\   6: P8.0 (A8)    6: P5.2
+\   7: P5.1         7: P5.3
+\   8: P2.5         8: P1.3
+\   9: P8.2         9: P1.4
+\  10: P8.3        10: P1.5
+
+$200 constant P1IN
+$201 constant P2IN
+$240 constant P5IN
+$261 constant P8IN
+
+3,3 2constant vcc \ This is the analog reference voltage
+
+task: seewires
+
+: seewires& ( -- )
+
+  multitask
+  lcd-init
+  6 prepare-ain
+  7 prepare-ain
+
+  seewires activate \ Define Task:
+
+    begin \ Capture analog channels and convert to voltage
+      6 analog s>f vcc 1024,0 f/ f*
+      7 analog s>f vcc 1024,0 f/ f*
+
+      <# \ Prepare six characters for display (decimal dots come for free)
+        .digit hold< \ Only one digit available as voltage is between 0 V and 3.3 V
+        [char] . hold<
+        f# f#
+        drop
+
+        .digit hold<
+        [char] . hold<
+        f# f#
+      0
+      #>
+      
+      pause
+      clearlcd
+      typelcd
+
+      \ Left side wires on the big symbols
+      1 1 lshift P8IN cbit@ if   4 lcdmem 19 + cbis! then \ P8.1 - TX Symbol
+      1 7 lshift P2IN cbit@ if   4 lcdmem  9 + cbis! then \ P2.7 - Antenna symbol
+      1 0 lshift P8IN cbit@ if   1 lcdmem 19 + cbis! then \ P8.0 - RX Symbol
+      1 1 lshift P5IN cbit@ if   4 lcdmem 12 + cbis! then \ P5.1 - <3 symbol
+      1 5 lshift P2IN cbit@ if   1 lcdmem 12 + cbis! then \ P2.5 - ! symbol
+      1 2 lshift P8IN cbit@ if   8 lcdmem 12 + cbis! then \ P8.2 - Time symbol
+      1 3 lshift P8IN cbit@ if   2 lcdmem 12 + cbis! then \ P8.3 - (R) symbol
+
+      \ Right side wires on the battery bar symbols
+      1 0 lshift P5IN cbit@ if   2 lcdmem 13 + cbis! then \ P5.0 - First Battery bar
+      1 2 lshift P5IN cbit@ if  32 lcdmem 12 + cbis! then \ P5.2 - 2. Battery bar
+      1 3 lshift P5IN cbit@ if   4 lcdmem 13 + cbis! then \ P5.3 - 3. Battery bar
+      1 3 lshift P1IN cbit@ if  64 lcdmem 12 + cbis! then \ P1.3 - 4. Battery bar
+      1 4 lshift P1IN cbit@ if   8 lcdmem 13 + cbis! then \ P1.4 - 5. Battery bar
+      1 5 lshift P1IN cbit@ if 128 lcdmem 12 + cbis! then \ P1.5 - 6. Battery bar
+
+      \ Switches on the colons
+      1 2 lshift P1IN cbit@ if    4 lcdmem  7 + cbis! then \ P1.2 - Left colon
+      1 6 lshift P2IN cbit@ if    4 lcdmem 11 + cbis! then \ P2.6 - Right colon
+
+      100 0 do pause loop \ Wait a bit
+    again
+;
+
+\ Unused segments: 1 lcdmem 13 +  - Battery brackets
+\                 16 lcdmem 12 +  - Battery pole
+
