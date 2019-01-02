@@ -22,6 +22,12 @@ cd ..
 
 # -----------------------------------------------------------------------------
 
+cd msp430g2533
+asl forth-mecrisp-msp430g2533.asm && p2hex forth-mecrisp-msp430g2533.p -r 0x0000-0xffff
+mv *.hex ../../msp430g2533
+rm *.p
+cd ..
+
 cd msp430g2553
 asl forth-mecrisp-msp430g2553.asm && p2hex forth-mecrisp-msp430g2553.p -r 0x0000-0xffff
 mv *.hex ../../msp430g2553
