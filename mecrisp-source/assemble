@@ -14,6 +14,12 @@ mv *.hex ../../msp430f2274
 rm *.p
 cd ..
 
+cd msp430f5510
+asl forth-mecrisp-msp430f5510.asm && p2hex forth-mecrisp-msp430f5510.p -r 0x0000-0xffff
+mv *.hex ../../msp430f5510
+rm *.p
+cd ..
+
 cd msp430f5529
 asl forth-mecrisp-msp430f5529.asm && p2hex forth-mecrisp-msp430f5529.p -r 0x0000-0xffff
 mv *.hex ../../msp430f5529
