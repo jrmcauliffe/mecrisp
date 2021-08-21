@@ -1,0 +1,4 @@
+convert to ti_txt format for bootloader
+
+
+-i [USB] --device 5xx -w forth-mecrisp-msp430f5510.hex
