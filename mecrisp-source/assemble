@@ -52,6 +52,7 @@ cd ..
 
 cd msp430fr2355
 asl forth-mecrisp-msp430fr2355.asm && p2hex forth-mecrisp-msp430fr2355.p -r 0x0000-0xffff
+asl forth-mecrisp-msp430fr2355-24mhz-xtal.asm && p2hex forth-mecrisp-msp430fr2355-24mhz-xtal.p -r 0x0000-0xffff
 mv *.hex ../../msp430fr2355
 rm *.p
 cd ..
