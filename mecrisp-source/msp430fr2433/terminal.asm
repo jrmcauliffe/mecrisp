@@ -27,20 +27,20 @@ LOCKLPM5 equ 1
 
 WDTCTL   equ 01CCh
 
-P1SEL0   equ 020Ah
+P2SEL0   equ 020Bh
 
 ;------------------------------------------------------------------------------
 ; UART
 
-UCA0_Base equ 0500h
+UCA1_Base equ 0520h
 
-UCA0CTLW0 equ UCA0_Base
-UCA0CTLW1 equ UCA0_Base +  2
-UCA0BRW   equ UCA0_Base +  6
-UCA0MCTLW equ UCA0_Base +  8
-UCA0RXBUF equ UCA0_Base + 0Ch
-UCA0TXBUF equ UCA0_Base + 0Eh
-UCA0IFG   equ UCA0_Base + 1Ch
+UCA1CTLW0 equ UCA1_Base
+UCA1CTLW1 equ UCA1_Base +  2
+UCA1BRW   equ UCA1_Base +  6
+UCA1MCTLW equ UCA1_Base +  8
+UCA1RXBUF equ UCA1_Base + 0Ch
+UCA1TXBUF equ UCA1_Base + 0Eh
+UCA1IFG   equ UCA1_Base + 1Ch
 
 UCSWRST equ 1
 UCSSEL__SMCLK equ 80h
@@ -73,7 +73,7 @@ pause:
 serial_qkey:
   call &hook_pause
   pushda #0
-  bit.b #UCRXIFG, &UCA0IFG
+  bit.b #UCRXIFG, &UCA1IFG
   jz +
   mov #-1, @r4
 + ret
@@ -88,7 +88,7 @@ serial_key:
 
   decd r4
   clr @r4
-  mov.b &UCA0RXBUF, @r4
+  mov.b &UCA1RXBUF, @r4
   ret
 
 ;------------------------------------------------------------------------------
@@ -97,7 +97,7 @@ serial_key:
 serial_qemit:
   call &hook_pause
   pushda #0
-  bit.b #UCTXIFG, &UCA0IFG
+  bit.b #UCTXIFG, &UCA1IFG
   jz +
   mov #-1, @r4
 + ret
@@ -110,6 +110,6 @@ serial_emit:
   bit @r4+, -2(r4) ; Did number recognize the string ?
   jz -
 
-  mov.b @r4, &UCA0TXBUF         ; TX -> RXed character
+  mov.b @r4, &UCA1TXBUF         ; TX -> RXed character
   drop
   ret
