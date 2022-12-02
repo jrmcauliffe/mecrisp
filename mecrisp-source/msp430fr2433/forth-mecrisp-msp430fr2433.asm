@@ -98,18 +98,18 @@ Reset: ; Main entry point. Chip specific initialisations go here.
   ; Init IO
 
   bic   #LOCKLPM5, &PM5CTL0         ; Unlock I/O pins
-  mov.b #32+16, &P1SEL0             ; Configure UART pins
+  mov.b #64+32, &P2SEL0             ; Configure UART pins
 
   ;------------------------------------------------------------------------------
   ; Init serial communication
 
-  mov #UCSWRST, &UCA0CTLW0          ; **Put state machine in reset**
-  bis #UCSSEL__SMCLK, &UCA0CTLW0    ; SMCLK
+  mov #UCSWRST, &UCA1CTLW0          ; **Put state machine in reset**
+  bis #UCSSEL__SMCLK, &UCA1CTLW0    ; SMCLK
 
-  mov #4, &UCA0BRW                  ; 8 MHz 115200 Baud
-  mov #05551h, &UCA0MCTLW           ; Modulation UCBRSx=55h, UCBRFx=5, UCOS16
+  mov #4, &UCA1BRW                  ; 8 MHz 115200 Baud
+  mov #05551h, &UCA1MCTLW           ; Modulation UCBRSx=55h, UCBRFx=5, UCOS16
 
-  bic #UCSWRST, &UCA0CTLW0          ; **Initialize USCI state machine**
+  bic #UCSWRST, &UCA1CTLW0          ; **Initialize USCI state machine**
   ;------------------------------------------------------------------------------
 
   welcome " for MSP430FR2433 by Matthias Koch"
