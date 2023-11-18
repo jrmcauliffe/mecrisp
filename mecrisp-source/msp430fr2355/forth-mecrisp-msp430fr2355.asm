@@ -67,49 +67,33 @@ Reset: ; Main entry point. Chip specific initialisations go here.
   ;------------------------------------------------------------------------------
   ; Init Clock
 
+  mov.w #0A520h, &01A0h             ; Enable FRCTL0 and set NWAITS to 2 (24mhz)
+  mov.b #0Fh, &01A1h                ; Disable FRCTL0 access (upper byte w)
+
   bis.w #40h, r2
-  mov.w #10h, &186h
-  mov.w #150h, &180h
-  mov.w #6h, &182h
-  mov.w #0F4h, &184h
-  nop
-  nop
-  nop
-  bic.w #40h, r2
+  mov.b #3Fh, &205h                 ; P2.6 & 2.7 DIR
+  mov.b #0C0h, &20Dh                ; P2.6 & 2.7 P1SEL
+  mov.w #08ECh, &18Ch               ; Configure XT1 settings in CSCTL6
+  bis.w #2, &188h                   ; Enable XT1CLK for MCLK src in CSCTL4
 
-- bit.w #300h, &18Eh
-  jc -
-
-  ; This is just some Forth code which I disassembled and inserted here:
-
-  ; : disable-fll ( -- ) [ $D032 , $0040 , ] inline ; \ Set   SCG0  Opcode bis #40, r2
-  ; : enable-fll  ( -- ) [ $C032 , $0040 , ] inline ;  \ Clear SCG0  Opcode bic #40, r2
-
-  ; disable-fll
-  ; 1 4 lshift CSCTL3 ! \ Select REFOCLK as FLL reference
-  ; $0150      CSCTL0 ! \ A good DCO guess for quickly reaching target frequency
-  ; 3 1 lshift CSCTL1 ! \ DCO Range around 8 MHz
-  ; 244        CSCTL2 ! \ REFOCLK * 244 = 32768 Hz * 244 = 7 995 392 Hz
-  ; nop                 \ Wait a little bit
-  ; enable-fll
-  ; begin $0300 CSCTL7 bit@ not until \ Wait for FLL to lock
+- bic.w #03h, &18Eh                 ; clear dco and xtal fault in CSCTL7
+  bic.w #02h, &102h                 ; clear xtal intr fault in SFRIFG1
+  bit.w #02h, &102h                 ; check xtal intr fault in SFTIFG1
+  jnz -
 
   ;------------------------------------------------------------------------------
   ; Init IO
 
   bic   #LOCKLPM5, &PM5CTL0         ; Unlock I/O pins
   mov.b #8+4, &P4SEL0               ; Configure UART pins P4.2, P4.3
-  mov.b #1, &022Ah                  ;
-  mov.b #1, &0224h                  ;
-
   ;------------------------------------------------------------------------------
   ; Init serial communication
 
   mov #UCSWRST, &UCA1CTLW0          ; **Put state machine in reset**
   bis #UCSSEL__SMCLK, &UCA1CTLW0    ; SMCLK
 
-  mov #4, &UCA1BRW                  ; 8 MHz 115200 Baud
-  mov #05551h, &UCA1MCTLW           ; Modulation UCBRSx=55h, UCBRFx=5, UCOS16
+  mov #0Dh, &UCA1BRW                ; 24 MHz 115200 Baud
+  mov #2501h, &UCA1MCTLW            ; Modulation UCBRSx=25h, UCBRFx=0, UCOS16
 
   bic #UCSWRST, &UCA1CTLW0          ; **Initialize USCI state machine**
   ;------------------------------------------------------------------------------
