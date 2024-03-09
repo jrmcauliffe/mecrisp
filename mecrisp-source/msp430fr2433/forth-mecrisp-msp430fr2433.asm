@@ -98,7 +98,7 @@ Reset: ; Main entry point. Chip specific initialisations go here.
   ; Init IO
 
   bic   #LOCKLPM5, &PM5CTL0         ; Unlock I/O pins
-  mov.b #FFh, &P2SEL0             ; Configure UART pins
+  mov.b #64+32, &P2SEL0             ; Configure UART pins
 
   ;------------------------------------------------------------------------------
   ; Init serial communication
